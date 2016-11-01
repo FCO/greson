@@ -11,13 +11,15 @@ sub process-file(Channel $ch, $file) {
 	}
 }
 
-multi MAIN(Str $path, +@files) {
-	say @files;
+multi MAIN(Str $path, +@files, Bool :$l is copy) {
+	#say @files;
 	my Channel $ch-files	.= new;
 	my Channel $ch-json		.= new;
 	my Channel $ch-resp		.= new;
 
 	my JSON::Path $jpath .= new: $path;
+
+	$l = True if not $l.defined and (@files > 1 or any(@files).IO.d);
 
 	$ch-files.closed.then:	{$ch-json.close}
 	$ch-json.closed.then:	{$ch-resp.close}
@@ -39,7 +41,6 @@ multi MAIN(Str $path, +@files) {
 	@prom.push: start {
 		react {
 			whenever $ch-json -> (:$path, :$content) {
-				#say "path: $path; content: {to-json $content}";
 				$jpath.values($content).map: -> $data {
 					$ch-resp.send: {:$path, :content($data)} with $data
 				}
@@ -50,7 +51,13 @@ multi MAIN(Str $path, +@files) {
 	@prom.push: start {
 		react {
 			whenever $ch-resp -> (:$path, :$content) {
-				say "$path: {to-json $content}";
+				my Str @json = to-json($content).split("\n");
+				my $head = $l ?? "$path:   " !! "";
+				print $head;
+				say @json.shift;
+				for @json -> Str $line {
+					say $line.indent: $head.chars
+				}
 			}
 		}
 	}
